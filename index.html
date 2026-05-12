@@ -710,7 +710,16 @@
                         <h2 style="font-size: 24px; font-weight: bold; color: #111827; margin-bottom: 16px;">📋 Today's Tasks</h2>
 
                         <div style="background-color: #f0f4f8; padding: 12px; border-radius: 6px; margin-bottom: 16px; border-left: 4px solid #2563eb;">
-                            <p style="font-size: 20px; font-weight: bold; color: #2563eb; margin: 0;">${actualFreeTime}min FREE</p>
+                            <p style="font-size: 12px; color: #4b5563; margin: 0 0 4px 0; font-weight: 600;">BEDTIME IN</p>
+                            <p style="font-size: 20px; font-weight: bold; color: #2563eb; margin: 0;">${(() => {
+                                const bedtimeBlock = WEEKLY_SCHEDULE[today].find(b => b.activity === 'Sleep');
+                                if (bedtimeBlock) {
+                                    const bedtimeMin = timeToMinutes(bedtimeBlock.time);
+                                    const minutesUntilBed = bedtimeMin - currentTimeMin;
+                                    return Math.max(0, minutesUntilBed);
+                                }
+                                return '?';
+                            })()}min</p>
                         </div>
 
                         <div style="display: flex; flex-direction: column; gap: 12px;">
@@ -849,9 +858,7 @@
                             </div>
                             <div class="flex items-center gap-4">
                                 <div class="text-sm">
-                                    <span class="text-green-600 font-bold">${dayFree}min free</span>
-                                    <span class="mx-2 text-gray-400">•</span>
-                                    <span class="text-orange-600 font-bold">${dayTaskMinutes}min tasks</span>
+                                    <span class="text-green-600 font-bold">${Math.max(0, dayFree - dayTaskMinutes)}min free</span>
                                 </div>
                                 <button onclick="openScheduleEditor('${day}')" class="text-blue-600 hover:text-blue-800 font-bold">⚙️</button>
                             </div>
