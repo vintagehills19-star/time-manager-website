@@ -25,6 +25,7 @@
     <div id="app"></div>
     <div id="editModal"></div>
     <div id="chatbotContainer"></div>
+    <div id="checklistContainer"></div>
 
     <script>
         // 🔑 CONFIGURE YOUR BACKEND URL HERE
@@ -292,14 +293,14 @@
 
                 chatMessages.push({ role: 'assistant', content: assistantMessage });
 
-               
+
                // Parse task from response
                 const taskMatch = assistantMessage.match(/\{"action":\s*"(add_task|update_task|delete_task)"[^}]*\}/);
                 if (taskMatch) {
                     try {
                         const taskData = JSON.parse(taskMatch[0]);
                         let result;
-                        
+
                         if (taskData.action === 'delete_task') {
                             const taskIndex = tasks.findIndex(t => t.name.includes(taskData.taskName) || t.originalName === taskData.taskName);
                             if (taskIndex !== -1) {
@@ -323,7 +324,7 @@
                         } else {
                             result = addTask(taskData.taskName, taskData.duration, taskData.dueDay, taskData.completeByDay);
                         }
-                        
+
                         return {
                             message: assistantMessage.replace(taskMatch[0], '').trim(),
                             taskAdded: result.message,
@@ -338,7 +339,7 @@
             } catch (error) {
                 return { error: `Network error: ${error.message}` };
             }
-        }     
+        }
         function toggleChatSidebar() {
             chatSidebarOpen = !chatSidebarOpen;
             renderChatbot();
@@ -472,6 +473,16 @@
             return 'fits';
         }
 
+        function toggleTaskComplete(id) {
+            const task = tasks.find(t => t.id === id);
+            if (task) {
+                task.completed = !task.completed;
+                saveTasks();
+                render();
+                renderChecklist();
+            }
+        }
+
         function deleteTask(id) {
             const task = tasks.find(t => t.id === id);
             if (task && task.isSplit) {
@@ -482,12 +493,14 @@
                     }
                     saveTasks();
                     render();
+                    renderChecklist();
                     return;
                 }
             }
             tasks = tasks.filter(t => t.id !== id);
             saveTasks();
             render();
+            renderChecklist();
         }
 
         function openEditModal(taskId) {
@@ -599,6 +612,7 @@
 
             closeScheduleEditor();
             render();
+            renderChecklist();
             renderChatbot();
         }
 
@@ -623,6 +637,7 @@
             saveTasks();
             closeEditModal();
             render();
+            renderChecklist();
         }
 
         function addTaskForm() {
@@ -642,13 +657,87 @@
                 document.getElementById('taskName').value = '';
                 document.getElementById('taskDuration').value = '';
                 render();
+                renderChecklist();
                 renderChatbot();
+            }
+        }
+
+        function calculateTaskStartTime(task, daySchedule, currentTime) {
+            let timeUsed = 0;
+            for (let block of daySchedule) {
+                if (block.type === 'flexible' && block.time.includes('-')) {
+                    const [start, end] = block.time.split('-').map(t => t.trim());
+                    const startMin = timeToMinutes(start);
+                    const endMin = timeToMinutes(end);
+                    const blockDuration = endMin - startMin;
+
+                    if (startMin >= currentTime && timeUsed < task.duration) {
+                        return { time: start, minUntil: startMin - currentTime };
+                    }
+
+                    if (startMin >= currentTime) {
+                        const canFit = blockDuration - (timeUsed > 0 ? 0 : 0);
+                        if (canFit > 0) {
+                            return { time: start, minUntil: startMin - currentTime };
+                        }
+                    }
+
+                    timeUsed += Math.min(task.duration - timeUsed, blockDuration);
+                }
+            }
+            return null;
+        }
+
+        // ✅ NEW CHECKLIST RENDERER - SEPARATE FROM MAIN RENDER
+        function renderChecklist() {
+            const today = getTodayDayName();
+            const currentTimeMin = new Date().getHours() * 60 + new Date().getMinutes();
+            const todaysTasks = getTodaysTasks();
+
+            const container = document.getElementById('checklistContainer');
+
+            // Clear existing checklist
+            container.innerHTML = '';
+
+            // Only show if there are tasks
+            if (todaysTasks.length > 0) {
+                let checklistHtml = `
+                    <div style="position: fixed; right: 16px; top: 16px; width: 320px; background-color: white; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); padding: 24px; max-height: 100vh; overflow-y: auto; z-index: 40;">
+                        <h2 style="font-size: 24px; font-weight: bold; color: #111827; margin-bottom: 16px;">📋 Today's Tasks</h2>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                `;
+
+                todaysTasks.forEach((task, idx) => {
+                    const startTimeInfo = calculateTaskStartTime(task, WEEKLY_SCHEDULE[today], currentTimeMin);
+                    const startTimeText = startTimeInfo ? `Start in ${startTimeInfo.minUntil}min at ${startTimeInfo.time}` : 'Ready now';
+
+                    checklistHtml += `
+                        <div style="padding: 12px; border-radius: 8px; background-color: ${task.completed ? '#f3f4f6' : '#eff6ff'}; border: ${task.completed ? 'none' : '2px solid #93c5fd'}; opacity: ${task.completed ? '0.6' : '1'};">
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTaskComplete(${task.id})" style="margin-top: 4px; cursor: pointer; width: 20px; height: 20px; accent-color: #2563eb;">
+                                <div style="flex: 1;">
+                                    <p style="font-weight: bold; color: #111827; margin: 0; ${task.completed ? 'text-decoration: line-through;' : ''}">${idx + 1}. ${task.name}</p>
+                                    <p style="font-size: 12px; color: #4b5563; margin-top: 4px; margin: 4px 0 0 0;">${task.duration}min</p>
+                                    <p style="font-size: 12px; color: #2563eb; font-weight: 600; margin-top: 4px; margin: 4px 0 0 0;">⏱️ ${startTimeText}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                checklistHtml += `
+                        </div>
+                    </div>
+                `;
+
+                container.innerHTML = checklistHtml;
             }
         }
 
         function render() {
             const today = getTodayDayName();
             const currentTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const currentTimeMin = new Date().getHours() * 60 + new Date().getMinutes();
             const totalFreeMinutes = Object.values(freeTime).reduce((a, b) => a + b, 0);
             const totalTaskMinutes = tasks.filter(t => !t.completed).reduce((sum, t) => sum + t.duration, 0);
             const currentTask = getCurrentTask();
@@ -817,8 +906,12 @@
         // Initialize
         loadTasks();
         render();
+        renderChecklist();
         renderChatbot();
-        setInterval(render, 60000);
+        setInterval(() => {
+            render();
+            renderChecklist();
+        }, 60000);
     </script>
 </body>
 </html>
