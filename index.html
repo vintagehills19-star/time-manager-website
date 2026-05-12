@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⏰ Weekly Time Manager with AI Chatbot</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chat-message {
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    <div id="editModal"></div>
+    <div id="chatbotContainer"></div>
+
+    <script>
+        // 🔑 CONFIGURE YOUR BACKEND URL HERE
+        const API_URL = 'https://time-manager-api.vercel.app/api/api-chat';
+        // Your weekly schedule
+        const WEEKLY_SCHEDULE = {
+            Monday: [
+                { time: '6:30-7:30', activity: 'Wake up & get ready', type: 'fixed' },
+                { time: '7:30-3:15', activity: 'School', type: 'fixed' },
+                { time: '3:15-7:30', activity: 'Class', type: 'fixed' },
+                { time: '7:30-8:15', activity: 'Eat', type: 'fixed' },
+                { time: '8:15-9:45', activity: 'Free time', type: 'flexible' },
+                { time: '9:45', activity: 'Sleep', type: 'fixed' },
+            ],
+            Tuesday: [
+                { time: '6:30-7:30', activity: 'Wake up & get ready', type: 'fixed' },
+                { time: '7:30-3:35', activity: 'School', type: 'fixed' },
+                { time: '3:35-4:15', activity: 'Travel home', type: 'fixed' },
+                { time: '4:15-4:30', activity: 'Free time', type: 'flexible' },
+                { time: '4:30-7:45', activity: 'Class', type: 'fixed' },
+                { time: '7:45-8:30', activity: 'Eat', type: 'fixed' },
+                { time: '8:30-9:45', activity: 'Free time', type: 'flexible' },
+                { time: '9:45', activity: 'Sleep', type: 'fixed' },
+            ],
+            Wednesday: [
+                { time: '6:30-7:30', activity: 'Wake up & get ready', type: 'fixed' },
+                { time: '7:30-3:35', activity: 'School', type: 'fixed' },
+                { time: '3:35-4:15', activity: 'Travel home', type: 'fixed' },
+                { time: '4:15-6:30', activity: 'Free time', type: 'flexible' },
+                { time: '6:30-9:30', activity: 'Class', type: 'fixed' },
+                { time: '9:30-10:00', activity: 'Free time', type: 'flexible' },
+                { time: '10:00', activity: 'Sleep', type: 'fixed' },
+            ],
+            Thursday: [
+                { time: '6:30-7:30', activity: 'Wake up & get ready', type: 'fixed' },
+                { time: '7:30-3:35', activity: 'School', type: 'fixed' },
+                { time: '3:35-9:45', activity: 'Free time', type: 'flexible' },
+                { time: '9:45', activity: 'Sleep', type: 'fixed' },
+            ],
+            Friday: [
+                { time: '6:30-7:30', activity: 'Wake up & get ready', type: 'fixed' },
+                { time: '7:30-3:35', activity: 'School', type: 'fixed' },
+                { time: '3:35-4:15', activity: 'Travel home', type: 'fixed' },
+                { time: '4:15-4:35', activity: 'Free time', type: 'flexible' },
+                { time: '4:35-7:30', activity: 'Class', type: 'fixed' },
+                { time: '7:30-8:15', activity: 'Eat', type: 'fixed' },
+                { time: '8:15-9:50', activity: 'Free time', type: 'flexible' },
+                { time: '9:50', activity: 'Sleep', type: 'fixed' },
+            ],
+            Saturday: [
+                { time: '7:00-11:00', activity: 'Free time', type: 'flexible' },
+                { time: '11:00-12:00', activity: 'Lunch/break', type: 'flexible' },
+                { time: '12:00-10:00', activity: 'Free time', type: 'flexible' },
+                { time: '10:00', activity: 'Sleep', type: 'fixed' },
+            ],
+            Sunday: [
+                { time: '8:00-11:00', activity: 'Free time', type: 'flexible' },
+                { time: '11:00-1:00', activity: 'Class', type: 'fixed' },
+                { time: '1:00-10:00', activity: 'Free time', type: 'flexible' },
+                { time: '10:00', activity: 'Sleep', type: 'fixed' },
+            ],
+        };
+
+        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        let tasks = [];
+        let editingTaskId = null;
+        let chatSidebarOpen = false;
+        let chatMessages = [];
+        let editingScheduleDay = null;
+
+        // Helper functions
+        function timeToMinutes(timeStr) {
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            return hours * 60 + (minutes || 0);
+        }
+
+        function calculateFreeTime() {
+            const freeTime = {};
+            Object.keys(WEEKLY_SCHEDULE).forEach(day => {
+                let totalFree = 0;
+                WEEKLY_SCHEDULE[day].forEach(block => {
+                    if (block.type === 'flexible' && block.time.includes('-')) {
+                        const [start, end] = block.time.split('-').map(t => t.trim());
+                        const startMin = timeToMinutes(start);
+                        const endMin = timeToMinutes(end);
+                        totalFree += (endMin - startMin);
+                    }
+                });
+                freeTime[day] = totalFree;
+            });
+            return freeTime;
+        }
+
+        const freeTime = calculateFreeTime();
+
+        function getTodayDayName() {
+            const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            return dayNames[new Date().getDay()];
+        }
+
+        function formatTime(mins) {
+            const hours = Math.floor(mins / 60);
+            const minutes = mins % 60;
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours > 12 ? hours - 12 : (hours === 0 ? 12 : hours);
+            return `${displayHours}:${minutes.toString().padStart(2, '0')} ${ampm}`;
+        }
+
+        function splitTask(taskName, duration, completeByDay) {
+            const today = getTodayDayName();
+            const todayIdx = days.indexOf(today);
+            const dueIdx = days.indexOf(completeByDay);
+
+            if (dueIdx < todayIdx) {
+                return null;
+            }
+
+            let availableDays = [];
+            for (let i = todayIdx; i <= dueIdx; i++) {
+                const day = days[i];
+                availableDays.push({
+                    day,
+                    freeTime: freeTime[day],
+                    idx: i
+                });
+            }
+
+            availableDays.reverse();
+
+            const splits = [];
+            let remaining = duration;
+
+            for (const dayInfo of availableDays) {
+                if (remaining <= 0) break;
+                const toTake = Math.min(remaining, dayInfo.freeTime);
+                if (toTake >= 15 || (toTake > 0 && remaining <= 15)) {
+                    splits.push({ day: dayInfo.day, duration: toTake });
+                    remaining -= toTake;
+                }
+            }
+
+            if (remaining > 0) {
+                for (let i = todayIdx - 1; i >= 0; i--) {
+                    if (remaining <= 0) break;
+                    const day = days[i];
+                    const toTake = Math.min(remaining, freeTime[day]);
+                    if (toTake >= 15 || (toTake > 0 && remaining <= 15)) {
+                        splits.unshift({ day, duration: toTake });
+                        remaining -= toTake;
+                    }
+                }
+            }
+
+            return splits.length > 0 ? splits : null;
+        }
+
+        function loadTasks() {
+            const saved = localStorage.getItem('timeTasks');
+            tasks = saved ? JSON.parse(saved) : [];
+        }
+
+        function saveTasks() {
+            localStorage.setItem('timeTasks', JSON.stringify(tasks));
+        }
+
+        function addTask(name, duration, dueDay, completeByDay) {
+            const splits = splitTask(name, duration, completeByDay);
+
+            if (splits && splits.length > 1) {
+                splits.forEach((split, idx) => {
+                    const partName = `${name} (${idx + 1}/${splits.length})`;
+                    tasks.push({
+                        id: Date.now() + idx,
+                        name: partName,
+                        originalName: name,
+                        duration: split.duration,
+                        dueDay,
+                        completeByDay: split.day,
+                        type: 'flexible',
+                        completed: false,
+                        isSplit: true,
+                        splitIndex: idx + 1,
+                        totalSplits: splits.length
+                    });
+                });
+                saveTasks();
+                return { success: true, message: `✅ "${name}" split into ${splits.length} parts!` };
+            } else if (splits && splits.length === 1) {
+                tasks.push({
+                    id: Date.now(),
+                    name,
+                    duration,
+                    dueDay,
+                    completeByDay,
+                    type: 'flexible',
+                    completed: false
+                });
+                saveTasks();
+                return { success: true, message: `✅ "${name}" added!` };
+            }
+
+            return { success: false, message: 'Could not fit task' };
+        }
+
+        // Chatbot functions
+        function getScheduleContext() {
+            const now = new Date();
+            const today = getTodayDayName();
+            const currentTime = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+
+            const totalFree = Object.values(freeTime).reduce((a, b) => a + b, 0);
+            const totalTaskTime = tasks.filter(t => !t.completed).reduce((sum, t) => sum + t.duration, 0);
+
+            let scheduleStr = `Current Date & Time: ${dateStr}, ${currentTime}\nToday: ${today}\n\n`;
+
+            scheduleStr += `Today's Schedule (${today}):\n`;
+            const todaySchedule = WEEKLY_SCHEDULE[today];
+            todaySchedule.forEach(block => {
+                scheduleStr += `  ${block.time} - ${block.activity} (${block.type})\n`;
+            });
+
+            scheduleStr += `\nWeekly Free Time:\n`;
+            days.forEach(day => {
+                const dayFree = freeTime[day];
+                const dayTasks = tasks.filter(t => t.completeByDay === day && !t.completed);
+                const dayUsed = dayTasks.reduce((sum, t) => sum + t.duration, 0);
+                scheduleStr += `${day}: ${dayFree}min free, ${dayUsed}min used\n`;
+            });
+
+            scheduleStr += `\nCurrent Tasks (${tasks.filter(t => !t.completed).length}):\n`;
+            tasks.filter(t => !t.completed).slice(0, 10).forEach(task => {
+                scheduleStr += `- ${task.name}: ${task.duration}min, complete by ${task.completeByDay}\n`;
+            });
+
+            return scheduleStr;
+        }
+
+        async function sendChatMessage(userMessage) {
+            if (!API_URL.includes('vercel.app')) {
+                return { error: '⚠️ Please configure your Vercel URL in the code (line 22)' };
+            }
+
+            chatMessages.push({ role: 'user', content: userMessage });
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        messages: chatMessages,
+                        scheduleContext: getScheduleContext()
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    return { error: `API Error: ${error.error || 'Unknown error'}` };
+                }
+
+                const data = await response.json();
+                const assistantMessage = data.message;
+
+                chatMessages.push({ role: 'assistant', content: assistantMessage });
+
+               
+               // Parse task from response
+                const taskMatch = assistantMessage.match(/\{"action":\s*"(add_task|update_task|delete_task)"[^}]*\}/);
+                if (taskMatch) {
+                    try {
+                        const taskData = JSON.parse(taskMatch[0]);
+                        let result;
+                        
+                        if (taskData.action === 'delete_task') {
+                            const taskIndex = tasks.findIndex(t => t.name.includes(taskData.taskName) || t.originalName === taskData.taskName);
+                            if (taskIndex !== -1) {
+                                tasks.splice(taskIndex, 1);
+                                saveTasks();
+                                result = { message: `Deleted ${taskData.taskName}` };
+                            } else {
+                                result = { message: `Could not find ${taskData.taskName}` };
+                            }
+                        } else if (taskData.action === 'update_task') {
+                            const existingTask = tasks.find(t => t.name.includes(taskData.taskName) || t.originalName === taskData.taskName);
+                            if (existingTask) {
+                                existingTask.duration = taskData.duration;
+                                existingTask.dueDay = taskData.dueDay;
+                                existingTask.completeByDay = taskData.completeByDay;
+                                saveTasks();
+                                result = { message: `Updated ${taskData.taskName}` };
+                            } else {
+                                result = { message: `Could not find ${taskData.taskName}` };
+                            }
+                        } else {
+                            result = addTask(taskData.taskName, taskData.duration, taskData.dueDay, taskData.completeByDay);
+                        }
+                        
+                        return {
+                            message: assistantMessage.replace(taskMatch[0], '').trim(),
+                            taskAdded: result.message,
+                            render: true
+                        };
+                    } catch (e) {
+                        console.error('Failed to parse task:', e);
+                    }
+                }
+
+                return { message: assistantMessage, render: true };
+            } catch (error) {
+                return { error: `Network error: ${error.message}` };
+            }
+        }     
+        function toggleChatSidebar() {
+            chatSidebarOpen = !chatSidebarOpen;
+            renderChatbot();
+        }
+
+        function renderChatbot() {
+            let html = `
+                <button onclick="toggleChatSidebar()" class="fixed bottom-8 left-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition z-40 text-2xl">
+                    💬
+                </button>
+
+                <div class="fixed bottom-0 left-0 w-96 h-screen bg-white shadow-2xl transform transition-transform duration-300 z-50 ${chatSidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col">
+                    <div class="bg-blue-600 text-white p-4 flex justify-between items-center">
+                        <h3 class="font-bold">🤖 Time Manager AI</h3>
+                        <button onclick="toggleChatSidebar()" class="text-2xl leading-none hover:bg-blue-700 p-1 rounded">✕</button>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto p-4 space-y-3">
+                        ${chatMessages.length === 0 ? `
+                            <div class="text-gray-500 text-center py-4">
+                                <p class="text-sm">👋 Hi! I can help you manage your tasks.</p>
+                                <p class="text-sm mt-2">Try:</p>
+                                <p class="text-xs mt-2 italic">"I have a 3-hour essay due Friday"</p>
+                                <p class="text-xs italic">"How busy is Thursday?"</p>
+                            </div>
+                        ` : chatMessages.map(msg => `
+                            <div class="chat-message ${msg.role === 'user' ? 'text-right' : 'text-left'}">
+                                <div class="inline-block max-w-xs px-3 py-2 rounded-lg ${
+                                    msg.role === 'user'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-gray-100 text-gray-900'
+                                }">
+<p class="text-sm">${msg.content.replace(/\s*\{[\s\S]*?"action"[\s\S]*?\}/g, '').trim()}</p>                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="border-t p-4">
+                        <div class="flex gap-2">
+                            <input type="text" id="chatInput" placeholder="Tell me about your tasks..." class="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500" onkeypress="if(event.key==='Enter') sendChat()">
+                            <button onclick="sendChat()" class="bg-blue-600 text-white px-4 py-2 rounded font-medium hover:bg-blue-700">Send</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('chatbotContainer').innerHTML = html;
+        }
+
+        async function sendChat() {
+            const input = document.getElementById('chatInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            input.value = '';
+            input.disabled = true;
+
+            const response = await sendChatMessage(message);
+
+            if (response.error) {
+                alert(response.error);
+            } else if (response.message) {
+                if (response.taskAdded) {
+                    alert(response.taskAdded);
+                }
+                if (response.render) {
+                    render();
+                }
+            }
+
+            renderChatbot();
+            setTimeout(() => {
+                const newInput = document.getElementById('chatInput');
+                if (newInput) {
+                    newInput.disabled = false;
+                    newInput.focus();
+                }
+            }, 100);
+        }
+
+        // Task management
+        function getCurrentTimeBlock() {
+            const today = getTodayDayName();
+            const now = new Date();
+            const currentMin = now.getHours() * 60 + now.getMinutes();
+
+            const schedule = WEEKLY_SCHEDULE[today];
+            for (let block of schedule) {
+                if (block.time.includes('-')) {
+                    const [start, end] = block.time.split('-').map(t => t.trim());
+                    const startMin = timeToMinutes(start);
+                    const endMin = timeToMinutes(end);
+
+                    if (currentMin >= startMin && currentMin < endMin) {
+                        return { block, startMin, endMin, currentMin };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function getCurrentTask() {
+            const todaysTasks = getTodaysTasks();
+            const currentBlock = getCurrentTimeBlock();
+
+            if (currentBlock && currentBlock.block.type === 'flexible') {
+                return todaysTasks.length > 0 ? todaysTasks[0] : null;
+            }
+            return null;
+        }
+
+        function getTodaysTasks() {
+            const today = getTodayDayName();
+            return tasks
+                .filter(t => !t.completed && t.completeByDay === today)
+                .sort((a, b) => {
+                    const dayDiff = days.indexOf(a.dueDay) - days.indexOf(b.dueDay);
+                    if (dayDiff !== 0) return dayDiff;
+                    return (a.splitIndex || 0) - (b.splitIndex || 0);
+                });
+        }
+
+        function getTaskStatus(task) {
+            const dayFree = freeTime[task.completeByDay];
+            const tasksOnDay = tasks
+                .filter(t => t.completeByDay === task.completeByDay && !t.completed)
+                .reduce((sum, t) => sum + t.duration, 0);
+
+            if (tasksOnDay > dayFree) return 'overbooked';
+            if (tasksOnDay + task.duration > dayFree) return 'overflow';
+            return 'fits';
+        }
+
+        function deleteTask(id) {
+            const task = tasks.find(t => t.id === id);
+            if (task && task.isSplit) {
+                const sameSplit = tasks.filter(t => t.originalName === task.originalName);
+                if (sameSplit.length > 1) {
+                    if (confirm(`Delete all ${sameSplit.length} parts?`)) {
+                        tasks = tasks.filter(t => t.originalName !== task.originalName);
+                    }
+                    saveTasks();
+                    render();
+                    return;
+                }
+            }
+            tasks = tasks.filter(t => t.id !== id);
+            saveTasks();
+            render();
+        }
+
+        function openEditModal(taskId) {
+            const task = tasks.find(t => t.id === taskId);
+            if (!task) return;
+
+            editingTaskId = taskId;
+            const isPartOfSplit = task.isSplit && task.originalName;
+
+            let html = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-lg shadow-xl p-6 max-w-md w-full">
+                        <h2 class="text-2xl font-bold text-gray-900 mb-4">✏️ Edit Task</h2>
+                        <div class="space-y-4">
+                            <input type="text" id="editName" value="${isPartOfSplit ? task.originalName : task.name}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Task name">
+                            <input type="number" id="editDuration" value="${task.duration}" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Duration">
+                            <select id="editDueDay" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                ${days.map(day => `<option value="${day}" ${day === task.dueDay ? 'selected' : ''}>${day}</option>`).join('')}
+                            </select>
+                            <select id="editCompleteByDay" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                ${days.map(day => `<option value="${day}" ${day === task.completeByDay ? 'selected' : ''}>${day}</option>`).join('')}
+                            </select>
+                            <div class="flex gap-3">
+                                <button onclick="saveEdit()" class="flex-1 bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700">Save</button>
+                                <button onclick="closeEditModal()" class="flex-1 bg-gray-300 text-gray-800 font-bold py-2 rounded-lg hover:bg-gray-400">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('editModal').innerHTML = html;
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').innerHTML = '';
+            editingTaskId = null;
+        }
+
+        function openScheduleEditor(day) {
+            editingScheduleDay = day;
+            const schedule = WEEKLY_SCHEDULE[day];
+
+            let html = `
+                <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div class="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-96 overflow-y-auto">
+                        <h2 class="text-2xl font-bold text-gray-900 mb-4">✏️ Edit ${day}'s Schedule</h2>
+                        <div class="space-y-3 mb-6">
+                            ${schedule.map((block, idx) => `
+                                <div class="flex gap-2 items-center p-3 bg-gray-50 rounded-lg">
+                                    <input type="text" value="${block.time}" class="schedule-time-${idx} flex-1 px-2 py-1 border rounded" placeholder="Time (e.g., 6:30-7:30)">
+                                    <input type="text" value="${block.activity}" class="schedule-activity-${idx} flex-1 px-2 py-1 border rounded" placeholder="Activity">
+                                    <select class="schedule-type-${idx} px-2 py-1 border rounded">
+                                        <option value="fixed" ${block.type === 'fixed' ? 'selected' : ''}>Fixed</option>
+                                        <option value="flexible" ${block.type === 'flexible' ? 'selected' : ''}>Free</option>
+                                    </select>
+                                    <button onclick="removeScheduleBlock(${idx}, '${day}')" class="text-red-600 hover:text-red-800">✕</button>
+                                </div>
+                            `).join('')}
+                        </div>
+                        <div class="flex gap-3">
+                            <button onclick="saveScheduleEdit('${day}')" class="flex-1 bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700">Save Changes</button>
+                            <button onclick="closeScheduleEditor()" class="flex-1 bg-gray-300 text-gray-800 font-bold py-2 rounded-lg hover:bg-gray-400">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('editModal').innerHTML = html;
+        }
+
+        function closeScheduleEditor() {
+            document.getElementById('editModal').innerHTML = '';
+            editingScheduleDay = null;
+        }
+
+        function removeScheduleBlock(idx, day) {
+            WEEKLY_SCHEDULE[day].splice(idx, 1);
+            openScheduleEditor(day);
+        }
+
+        function saveScheduleEdit(day) {
+            const newSchedule = [];
+            const schedule = WEEKLY_SCHEDULE[day];
+
+            schedule.forEach((_, idx) => {
+                const time = document.querySelector(`.schedule-time-${idx}`).value;
+                const activity = document.querySelector(`.schedule-activity-${idx}`).value;
+                const type = document.querySelector(`.schedule-type-${idx}`).value;
+
+                if (time && activity) {
+                    newSchedule.push({ time, activity, type });
+                }
+            });
+
+            WEEKLY_SCHEDULE[day] = newSchedule;
+
+            // Recalculate free time since schedule changed
+            Object.keys(WEEKLY_SCHEDULE).forEach(d => {
+                let totalFree = 0;
+                WEEKLY_SCHEDULE[d].forEach(block => {
+                    if (block.type === 'flexible' && block.time.includes('-')) {
+                        const [start, end] = block.time.split('-').map(t => t.trim());
+                        const startMin = timeToMinutes(start);
+                        const endMin = timeToMinutes(end);
+                        totalFree += (endMin - startMin);
+                    }
+                });
+                freeTime[d] = totalFree;
+            });
+
+            closeScheduleEditor();
+            render();
+            renderChatbot();
+        }
+
+        function saveEdit() {
+            const task = tasks.find(t => t.id === editingTaskId);
+            if (!task) return;
+
+            const newName = document.getElementById('editName').value.trim();
+            const newDuration = parseInt(document.getElementById('editDuration').value);
+            const newDueDay = document.getElementById('editDueDay').value;
+            const newCompleteByDay = document.getElementById('editCompleteByDay').value;
+
+            if (!newName) {
+                alert('Task name cannot be empty');
+                return;
+            }
+
+            task.name = newName;
+            task.dueDay = newDueDay;
+            task.completeByDay = newCompleteByDay;
+
+            saveTasks();
+            closeEditModal();
+            render();
+        }
+
+        function addTaskForm() {
+            const name = document.getElementById('taskName').value.trim();
+            const duration = parseInt(document.getElementById('taskDuration').value);
+            const dueDay = document.getElementById('taskDueDay').value;
+            const completeByDay = document.getElementById('taskCompleteByDay').value;
+
+            if (!name || !duration) {
+                alert('Fill in all fields');
+                return;
+            }
+
+            const result = addTask(name, duration, dueDay, completeByDay);
+            if (result.success) {
+                alert(result.message);
+                document.getElementById('taskName').value = '';
+                document.getElementById('taskDuration').value = '';
+                render();
+                renderChatbot();
+            }
+        }
+
+        function render() {
+            const today = getTodayDayName();
+            const currentTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const totalFreeMinutes = Object.values(freeTime).reduce((a, b) => a + b, 0);
+            const totalTaskMinutes = tasks.filter(t => !t.completed).reduce((sum, t) => sum + t.duration, 0);
+            const currentTask = getCurrentTask();
+            const currentBlock = getCurrentTimeBlock();
+            const todaysTasks = getTodaysTasks();
+
+            let html = `
+                <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8 pr-96">
+                    <div class="max-w-5xl mx-auto">
+                        <div class="mb-8">
+                            <h1 class="text-4xl font-bold text-gray-900 mb-2">⏰ Weekly Time Manager</h1>
+                            <p class="text-gray-600">Smart task splitting. AI-powered planning.</p>
+                        </div>
+
+                        <div class="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg shadow-2xl p-8 mb-8 text-white">
+                            <div class="flex justify-between items-start mb-6">
+                                <div>
+                                    <p class="text-blue-100 text-sm font-medium">RIGHT NOW</p>
+                                    <p class="text-4xl font-bold">${currentTime}</p>
+                                    <p class="text-blue-100 text-sm mt-1">${today}</p>
+                                </div>
+                                <div class="text-right">
+                                    <p class="text-blue-100 text-sm font-medium">TODAY</p>
+                                    <p class="text-3xl font-bold">${todaysTasks.length} tasks</p>
+                                </div>
+                            </div>
+
+                            ${currentBlock ? `
+                                <div class="border-t border-blue-400 pt-6">
+                                    ${currentBlock.block.type === 'flexible' && currentTask ? `
+                                        <p class="text-blue-100 text-sm font-medium mb-2">👉 DO THIS NOW</p>
+                                        <p class="text-2xl font-bold">${currentTask.name}</p>
+                                    ` : currentBlock.block.type === 'flexible' ? `
+                                        <p class="text-blue-100 text-sm font-medium mb-2">😎 YOU'RE FREE!</p>
+                                        <p class="text-xl">Good time to get ahead</p>
+                                    ` : `
+                                        <p class="text-yellow-200 text-sm font-medium mb-2">🏫 YOU'RE IN ${currentBlock.block.activity.toUpperCase()}</p>
+                                        <p class="text-xl">Until ${formatTime(currentBlock.endMin)}</p>
+                                    `}
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+                            <div class="grid grid-cols-4 gap-4">
+                                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                                    <p class="text-sm text-gray-600 font-medium">Total Free</p>
+                                    <p class="text-2xl font-bold text-blue-600">${Math.floor(totalFreeMinutes / 60)}h</p>
+                                </div>
+                                <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
+                                    <p class="text-sm text-gray-600 font-medium">Tasks</p>
+                                    <p class="text-2xl font-bold text-orange-600">${tasks.filter(t => !t.completed).length}</p>
+                                </div>
+                                <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
+                                    <p class="text-sm text-gray-600 font-medium">Allocated</p>
+                                    <p class="text-2xl font-bold text-purple-600">${Math.floor(totalTaskMinutes / 60)}h</p>
+                                </div>
+                                <div class="p-4 rounded-lg border ${totalTaskMinutes <= totalFreeMinutes ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}">
+                                    <p class="text-sm text-gray-600 font-medium">Left</p>
+                                    <p class="text-2xl font-bold ${totalTaskMinutes <= totalFreeMinutes ? 'text-green-600' : 'text-red-600'}">
+                                        ${Math.floor(Math.max(0, totalFreeMinutes - totalTaskMinutes) / 60)}h
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            <div class="lg:col-span-1 bg-white rounded-lg shadow-lg p-6 h-fit sticky top-8">
+                                <h2 class="text-xl font-bold text-gray-900 mb-4">➕ Add Task</h2>
+                                <div class="space-y-3">
+                                    <input type="text" id="taskName" placeholder="Task name" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                    <input type="number" id="taskDuration" placeholder="Minutes" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                    <select id="taskDueDay" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                        ${days.map(day => `<option value="${day}">${day}</option>`).join('')}
+                                    </select>
+                                    <select id="taskCompleteByDay" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
+                                        ${days.map(day => `<option value="${day}">${day}</option>`).join('')}
+                                    </select>
+                                    <button onclick="addTaskForm()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">+ Add</button>
+                                </div>
+                            </div>
+
+                            <div class="lg:col-span-2 space-y-4">
+                                <h2 class="text-2xl font-bold text-gray-900 mb-4">📅 Your Schedule</h2>
+            `;
+
+            days.forEach(day => {
+                const schedule = WEEKLY_SCHEDULE[day];
+                const dayTasks = tasks.filter(t => t.completeByDay === day && !t.completed);
+                const dayTaskMinutes = dayTasks.reduce((sum, t) => sum + t.duration, 0);
+                const dayFree = freeTime[day];
+                const percentUsed = Math.min(100, (dayTaskMinutes / dayFree) * 100);
+                const isToday = day === today;
+
+                html += `
+                    <div class="bg-white rounded-lg shadow-lg p-5 ${isToday ? 'ring-2 ring-blue-500' : ''}">
+                        <div class="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 class="font-bold text-lg text-gray-900">${day} ${isToday ? '📍' : ''}</h3>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <div class="text-sm">
+                                    <span class="text-green-600 font-bold">${dayFree}min free</span>
+                                    <span class="mx-2 text-gray-400">•</span>
+                                    <span class="text-orange-600 font-bold">${dayTaskMinutes}min tasks</span>
+                                </div>
+                                <button onclick="openScheduleEditor('${day}')" class="text-blue-600 hover:text-blue-800 font-bold">⚙️</button>
+                            </div>
+                        </div>
+
+                        <div class="space-y-2 mb-4 border-l-4 border-gray-300 pl-3">
+                            ${schedule.map(block => `
+                                <div class="text-sm">
+                                    <p class="font-mono text-gray-600">${block.time}</p>
+                                    <p class="font-medium ${block.type === 'fixed' ? 'text-gray-900' : 'text-blue-600'}">${block.activity} ${block.type === 'flexible' ? '(FREE)' : ''}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        ${dayTasks.length > 0 ? `
+                            <div class="border-t pt-3">
+                                <p class="text-sm font-bold text-gray-700 mb-2">📝 Tasks:</p>
+                                <div class="space-y-2">
+                                    ${dayTasks.map(task => `
+                                        <div class="flex justify-between items-center p-2 rounded ${getTaskStatus(task) === 'fits' ? 'bg-green-100' : 'bg-yellow-100'}">
+                                            <div>
+                                                <p class="font-medium text-gray-900">${task.name}</p>
+                                                <p class="text-sm text-gray-600">${task.duration}min</p>
+                                                ${day === today && task.completeByDay === today ? (() => {
+                                                    const now = new Date().getHours() * 60 + new Date().getMinutes();
+                                                    for (let block of WEEKLY_SCHEDULE[today]) {
+                                                        if (block.type === 'flexible' && block.time.includes('-')) {
+                                                            const [start] = block.time.split('-');
+                                                            const startMin = timeToMinutes(start.trim());
+                                                            if (startMin > now) {
+                                                                const minUntil = startMin - now;
+                                                                return `<p class="text-xs text-blue-600 font-bold">⏱️ Start in ${minUntil} min at ${start.trim()}</p>`;
+                                                            }
+                                                        }
+                                                    }
+                                                    return '';
+                                                })() : ''}
+                                            </div>
+                                            <div class="flex gap-1">
+                                                <button onclick="openEditModal(${task.id})" class="text-blue-600">✏️</button>
+                                                <button onclick="deleteTask(${task.id})" class="text-red-600">✕</button>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+
+            html += `
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('app').innerHTML = html;
+        }
+
+        // Initialize
+        loadTasks();
+        render();
+        renderChatbot();
+        setInterval(render, 60000);
+    </script>
+</body>
+</html>
