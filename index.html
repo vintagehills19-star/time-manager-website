@@ -55,8 +55,8 @@
                 { time: '3:35-4:15', activity: 'Travel home', type: 'fixed' },
                 { time: '4:15-6:30', activity: 'Free time', type: 'flexible' },
                 { time: '6:30-9:30', activity: 'Class', type: 'fixed' },
-                { time: '9:30-10:00', activity: 'Free time', type: 'flexible' },
-                { time: '10:00', activity: 'Sleep', type: 'fixed' },
+                { time: '9:30-9:45', activity: 'Free time', type: 'flexible' },
+                { time: '9:45', activity: 'Sleep', type: 'fixed' },
             ],
             Thursday: [
                 { time: '6:30-7:30', activity: 'Wake up & get ready', type: 'fixed' },
@@ -71,20 +71,20 @@
                 { time: '4:15-4:35', activity: 'Free time', type: 'flexible' },
                 { time: '4:35-7:30', activity: 'Class', type: 'fixed' },
                 { time: '7:30-8:15', activity: 'Eat', type: 'fixed' },
-                { time: '8:15-9:50', activity: 'Free time', type: 'flexible' },
-                { time: '9:50', activity: 'Sleep', type: 'fixed' },
+                { time: '8:15-9:45', activity: 'Free time', type: 'flexible' },
+                { time: '9:45', activity: 'Sleep', type: 'fixed' },
             ],
             Saturday: [
                 { time: '7:00-11:00', activity: 'Free time', type: 'flexible' },
                 { time: '11:00-12:00', activity: 'Lunch/break', type: 'flexible' },
-                { time: '12:00-10:00', activity: 'Free time', type: 'flexible' },
-                { time: '10:00', activity: 'Sleep', type: 'fixed' },
+                { time: '12:00-9:45', activity: 'Free time', type: 'flexible' },
+                { time: '9:45', activity: 'Sleep', type: 'fixed' },
             ],
             Sunday: [
                 { time: '8:00-11:00', activity: 'Free time', type: 'flexible' },
                 { time: '11:00-1:00', activity: 'Class', type: 'fixed' },
-                { time: '1:00-10:00', activity: 'Free time', type: 'flexible' },
-                { time: '10:00', activity: 'Sleep', type: 'fixed' },
+                { time: '1:00-9:45', activity: 'Free time', type: 'flexible' },
+                { time: '9:45', activity: 'Sleep', type: 'fixed' },
             ],
         };
 
@@ -710,16 +710,18 @@
                         <h2 style="font-size: 24px; font-weight: bold; color: #111827; margin-bottom: 16px;">📋 Today's Tasks</h2>
 
                         <div style="background-color: #f0f4f8; padding: 12px; border-radius: 6px; margin-bottom: 16px; border-left: 4px solid #2563eb;">
-                            <p style="font-size: 12px; color: #4b5563; margin: 0 0 4px 0; font-weight: 600;">BEDTIME IN</p>
-                            <p style="font-size: 20px; font-weight: bold; color: #2563eb; margin: 0;">${(() => {
+                            <p style="font-size: 14px; color: #111827; margin: 0; font-weight: 600;">You Have ${(() => {
                                 const bedtimeBlock = WEEKLY_SCHEDULE[today].find(b => b.activity === 'Sleep');
                                 if (bedtimeBlock) {
-                                    const bedtimeMin = timeToMinutes(bedtimeBlock.time);
-                                    const minutesUntilBed = bedtimeMin - currentTimeMin;
-                                    return Math.max(0, minutesUntilBed);
+                                    let bedtimeMin = timeToMinutes(bedtimeBlock.time);
+                                    let minutesUntil = bedtimeMin - currentTimeMin;
+                                    if (minutesUntil < 0) {
+                                        minutesUntil += 1440;
+                                    }
+                                    return minutesUntil;
                                 }
                                 return '?';
-                            })()}min</p>
+                            })()}min to Finish Your Tasks</p>
                         </div>
 
                         <div style="display: flex; flex-direction: column; gap: 12px;">
