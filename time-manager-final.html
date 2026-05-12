@@ -772,40 +772,32 @@
                             <div class="border-t pt-3">
                                 <p class="text-sm font-bold text-gray-700 mb-2">📝 Tasks:</p>
                                 <div class="space-y-2">
-                                    ${dayTasks.map(task => {
-                                        let startInfo = '';
-                                        if (day === today) {
-                                            const schedule = WEEKLY_SCHEDULE[today];
-                                            let nextFreeTime = null;
-                                            for (let block of schedule) {
-                                                if (block.type === 'flexible' && block.time.includes('-')) {
-                                                    const [start] = block.time.split('-').map(t => t.trim());
-                                                    const startMin = timeToMinutes(start);
-                                                    const now = new Date().getHours() * 60 + new Date().getMinutes();
-                                                    if (startMin > now) {
-                                                        nextFreeTime = { start, minUntil: startMin - now };
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                            if (nextFreeTime) {
-                                                startInfo = `Start in ${nextFreeTime.minUntil} min at ${nextFreeTime.start}`;
-                                            }
-                                        }
-                                        return `
+                                    ${dayTasks.map(task => `
                                         <div class="flex justify-between items-center p-2 rounded ${getTaskStatus(task) === 'fits' ? 'bg-green-100' : 'bg-yellow-100'}">
                                             <div>
                                                 <p class="font-medium text-gray-900">${task.name}</p>
                                                 <p class="text-sm text-gray-600">${task.duration}min</p>
-                                                ${startInfo ? `<p class="text-xs text-blue-600 font-bold">⏱️ ${startInfo}</p>` : ''}
+                                                ${day === today && task.completeByDay === today ? (() => {
+                                                    const now = new Date().getHours() * 60 + new Date().getMinutes();
+                                                    for (let block of WEEKLY_SCHEDULE[today]) {
+                                                        if (block.type === 'flexible' && block.time.includes('-')) {
+                                                            const [start] = block.time.split('-');
+                                                            const startMin = timeToMinutes(start.trim());
+                                                            if (startMin > now) {
+                                                                const minUntil = startMin - now;
+                                                                return `<p class="text-xs text-blue-600 font-bold">⏱️ Start in ${minUntil} min at ${start.trim()}</p>`;
+                                                            }
+                                                        }
+                                                    }
+                                                    return '';
+                                                })() : ''}
                                             </div>
                                             <div class="flex gap-1">
                                                 <button onclick="openEditModal(${task.id})" class="text-blue-600">✏️</button>
                                                 <button onclick="deleteTask(${task.id})" class="text-red-600">✕</button>
                                             </div>
                                         </div>
-                                        `;
-                                    }).join('')}
+                                    `).join('')}
                                 </div>
                             </div>
                         ` : ''}
