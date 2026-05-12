@@ -472,6 +472,15 @@
             return 'fits';
         }
 
+        function toggleTaskComplete(id) {
+            const task = tasks.find(t => t.id === id);
+            if (task) {
+                task.completed = !task.completed;
+                saveTasks();
+                render();
+            }
+        }
+
         function deleteTask(id) {
             const task = tasks.find(t => t.id === id);
             if (task && task.isSplit) {
@@ -646,17 +655,73 @@
             }
         }
 
+        function calculateTaskStartTime(task, daySchedule, currentTime) {
+            let timeUsed = 0;
+            for (let block of daySchedule) {
+                if (block.type === 'flexible' && block.time.includes('-')) {
+                    const [start, end] = block.time.split('-').map(t => t.trim());
+                    const startMin = timeToMinutes(start);
+                    const endMin = timeToMinutes(end);
+                    const blockDuration = endMin - startMin;
+
+                    if (startMin >= currentTime && timeUsed < task.duration) {
+                        return { time: start, minUntil: startMin - currentTime };
+                    }
+
+                    if (startMin >= currentTime) {
+                        const canFit = blockDuration - (timeUsed > 0 ? 0 : 0);
+                        if (canFit > 0) {
+                            return { time: start, minUntil: startMin - currentTime };
+                        }
+                    }
+
+                    timeUsed += Math.min(task.duration - timeUsed, blockDuration);
+                }
+            }
+            return null;
+        }
+
         function render() {
             const today = getTodayDayName();
             const currentTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            const currentTimeMin = new Date().getHours() * 60 + new Date().getMinutes();
             const totalFreeMinutes = Object.values(freeTime).reduce((a, b) => a + b, 0);
             const totalTaskMinutes = tasks.filter(t => !t.completed).reduce((sum, t) => sum + t.duration, 0);
             const currentTask = getCurrentTask();
             const currentBlock = getCurrentTimeBlock();
             const todaysTasks = getTodaysTasks();
 
+            // Build today's task checklist with start times
+            let todayTasksHtml = '';
+            if (todaysTasks.length > 0) {
+                todayTasksHtml = `
+                    <div class="fixed right-4 top-4 w-80 bg-white rounded-lg shadow-2xl p-6 max-h-screen overflow-y-auto z-30">
+                        <h2 class="text-2xl font-bold text-gray-900 mb-4">📋 Today's Tasks</h2>
+                        <div class="space-y-3">
+                            ${todaysTasks.map((task, idx) => {
+                                const startTimeInfo = calculateTaskStartTime(task, WEEKLY_SCHEDULE[today], currentTimeMin);
+                                const startTimeText = startTimeInfo ? `Start in ${startTimeInfo.minUntil}min at ${startTimeInfo.time}` : 'Ready now';
+                                return `
+                                    <div class="p-3 rounded-lg ${task.completed ? 'bg-gray-100 opacity-60' : 'bg-blue-50 border-2 border-blue-300'}">
+                                        <div class="flex items-start gap-3">
+                                            <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTaskComplete(${task.id})" class="mt-1 cursor-pointer w-5 h-5 accent-blue-600">
+                                            <div class="flex-1">
+                                                <p class="font-bold text-gray-900 ${task.completed ? 'line-through' : ''}">${idx + 1}. ${task.name}</p>
+                                                <p class="text-xs text-gray-600 mt-1">${task.duration}min</p>
+                                                <p class="text-xs text-blue-600 font-semibold mt-1">⏱️ ${startTimeText}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
             let html = `
                 <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8 pr-96">
+                    ${todayTasksHtml}
                     <div class="max-w-5xl mx-auto">
                         <div class="mb-8">
                             <h1 class="text-4xl font-bold text-gray-900 mb-2">⏰ Weekly Time Manager</h1>
