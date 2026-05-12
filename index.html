@@ -25,6 +25,7 @@
     <div id="app"></div>
     <div id="editModal"></div>
     <div id="chatbotContainer"></div>
+    <div id="checklistContainer"></div>
 
     <script>
         // 🔑 CONFIGURE YOUR BACKEND URL HERE
@@ -292,14 +293,14 @@
 
                 chatMessages.push({ role: 'assistant', content: assistantMessage });
 
-               
+
                // Parse task from response
                 const taskMatch = assistantMessage.match(/\{"action":\s*"(add_task|update_task|delete_task)"[^}]*\}/);
                 if (taskMatch) {
                     try {
                         const taskData = JSON.parse(taskMatch[0]);
                         let result;
-                        
+
                         if (taskData.action === 'delete_task') {
                             const taskIndex = tasks.findIndex(t => t.name.includes(taskData.taskName) || t.originalName === taskData.taskName);
                             if (taskIndex !== -1) {
@@ -323,7 +324,7 @@
                         } else {
                             result = addTask(taskData.taskName, taskData.duration, taskData.dueDay, taskData.completeByDay);
                         }
-                        
+
                         return {
                             message: assistantMessage.replace(taskMatch[0], '').trim(),
                             taskAdded: result.message,
@@ -338,7 +339,7 @@
             } catch (error) {
                 return { error: `Network error: ${error.message}` };
             }
-        }     
+        }
         function toggleChatSidebar() {
             chatSidebarOpen = !chatSidebarOpen;
             renderChatbot();
@@ -478,6 +479,7 @@
                 task.completed = !task.completed;
                 saveTasks();
                 render();
+                renderChecklist();
             }
         }
 
@@ -491,12 +493,14 @@
                     }
                     saveTasks();
                     render();
+                    renderChecklist();
                     return;
                 }
             }
             tasks = tasks.filter(t => t.id !== id);
             saveTasks();
             render();
+            renderChecklist();
         }
 
         function openEditModal(taskId) {
@@ -608,6 +612,7 @@
 
             closeScheduleEditor();
             render();
+            renderChecklist();
             renderChatbot();
         }
 
@@ -632,6 +637,7 @@
             saveTasks();
             closeEditModal();
             render();
+            renderChecklist();
         }
 
         function addTaskForm() {
@@ -651,6 +657,7 @@
                 document.getElementById('taskName').value = '';
                 document.getElementById('taskDuration').value = '';
                 render();
+                renderChecklist();
                 renderChatbot();
             }
         }
@@ -681,6 +688,52 @@
             return null;
         }
 
+        // ✅ NEW CHECKLIST RENDERER - SEPARATE FROM MAIN RENDER
+        function renderChecklist() {
+            const today = getTodayDayName();
+            const currentTimeMin = new Date().getHours() * 60 + new Date().getMinutes();
+            const todaysTasks = getTodaysTasks();
+
+            const container = document.getElementById('checklistContainer');
+
+            // Clear existing checklist
+            container.innerHTML = '';
+
+            // Only show if there are tasks
+            if (todaysTasks.length > 0) {
+                let checklistHtml = `
+                    <div style="position: fixed; right: 16px; top: 16px; width: 320px; background-color: white; border-radius: 8px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); padding: 24px; max-height: 100vh; overflow-y: auto; z-index: 40;">
+                        <h2 style="font-size: 24px; font-weight: bold; color: #111827; margin-bottom: 16px;">📋 Today's Tasks</h2>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                `;
+
+                todaysTasks.forEach((task, idx) => {
+                    const startTimeInfo = calculateTaskStartTime(task, WEEKLY_SCHEDULE[today], currentTimeMin);
+                    const startTimeText = startTimeInfo ? `Start in ${startTimeInfo.minUntil}min at ${startTimeInfo.time}` : 'Ready now';
+
+                    checklistHtml += `
+                        <div style="padding: 12px; border-radius: 8px; background-color: ${task.completed ? '#f3f4f6' : '#eff6ff'}; border: ${task.completed ? 'none' : '2px solid #93c5fd'}; opacity: ${task.completed ? '0.6' : '1'};">
+                            <div style="display: flex; gap: 12px; align-items: flex-start;">
+                                <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTaskComplete(${task.id})" style="margin-top: 4px; cursor: pointer; width: 20px; height: 20px; accent-color: #2563eb;">
+                                <div style="flex: 1;">
+                                    <p style="font-weight: bold; color: #111827; margin: 0; ${task.completed ? 'text-decoration: line-through;' : ''}">${idx + 1}. ${task.name}</p>
+                                    <p style="font-size: 12px; color: #4b5563; margin-top: 4px; margin: 4px 0 0 0;">${task.duration}min</p>
+                                    <p style="font-size: 12px; color: #2563eb; font-weight: 600; margin-top: 4px; margin: 4px 0 0 0;">⏱️ ${startTimeText}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                checklistHtml += `
+                        </div>
+                    </div>
+                `;
+
+                container.innerHTML = checklistHtml;
+            }
+        }
+
         function render() {
             const today = getTodayDayName();
             const currentTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
@@ -691,37 +744,8 @@
             const currentBlock = getCurrentTimeBlock();
             const todaysTasks = getTodaysTasks();
 
-            // Build today's task checklist with start times
-            let todayTasksHtml = '';
-            if (todaysTasks.length > 0) {
-                todayTasksHtml = `
-                    <div class="fixed right-4 top-4 w-80 bg-white rounded-lg shadow-2xl p-6 max-h-screen overflow-y-auto z-30">
-                        <h2 class="text-2xl font-bold text-gray-900 mb-4">📋 Today's Tasks</h2>
-                        <div class="space-y-3">
-                            ${todaysTasks.map((task, idx) => {
-                                const startTimeInfo = calculateTaskStartTime(task, WEEKLY_SCHEDULE[today], currentTimeMin);
-                                const startTimeText = startTimeInfo ? `Start in ${startTimeInfo.minUntil}min at ${startTimeInfo.time}` : 'Ready now';
-                                return `
-                                    <div class="p-3 rounded-lg ${task.completed ? 'bg-gray-100 opacity-60' : 'bg-blue-50 border-2 border-blue-300'}">
-                                        <div class="flex items-start gap-3">
-                                            <input type="checkbox" ${task.completed ? 'checked' : ''} onchange="toggleTaskComplete(${task.id})" class="mt-1 cursor-pointer w-5 h-5 accent-blue-600">
-                                            <div class="flex-1">
-                                                <p class="font-bold text-gray-900 ${task.completed ? 'line-through' : ''}">${idx + 1}. ${task.name}</p>
-                                                <p class="text-xs text-gray-600 mt-1">${task.duration}min</p>
-                                                <p class="text-xs text-blue-600 font-semibold mt-1">⏱️ ${startTimeText}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
             let html = `
                 <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8 pr-96">
-                    ${todayTasksHtml}
                     <div class="max-w-5xl mx-auto">
                         <div class="mb-8">
                             <h1 class="text-4xl font-bold text-gray-900 mb-2">⏰ Weekly Time Manager</h1>
@@ -761,20 +785,20 @@
                             <div class="grid grid-cols-4 gap-4">
                                 <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
                                     <p class="text-sm text-gray-600 font-medium">Total Free</p>
-                                    <p class="text-2xl font-bold text-blue-600">${Math.floor(totalFreeMinutes / 60)}h</p>
+                                    <p class="text-2xl font-bold text-blue-600">${totalFreeMinutes}min</p>
                                 </div>
                                 <div class="bg-orange-50 p-4 rounded-lg border border-orange-200">
-                                    <p class="text-sm text-gray-600 font-medium">Tasks</p>
-                                    <p class="text-2xl font-bold text-orange-600">${tasks.filter(t => !t.completed).length}</p>
+                                    <p class="text-sm text-gray-600 font-medium">Tasks Assigned</p>
+                                    <p class="text-2xl font-bold text-orange-600">${totalTaskMinutes}min</p>
                                 </div>
                                 <div class="bg-purple-50 p-4 rounded-lg border border-purple-200">
-                                    <p class="text-sm text-gray-600 font-medium">Allocated</p>
-                                    <p class="text-2xl font-bold text-purple-600">${Math.floor(totalTaskMinutes / 60)}h</p>
+                                    <p class="text-sm text-gray-600 font-medium">Task Count</p>
+                                    <p class="text-2xl font-bold text-purple-600">${tasks.filter(t => !t.completed).length}</p>
                                 </div>
                                 <div class="p-4 rounded-lg border ${totalTaskMinutes <= totalFreeMinutes ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}">
-                                    <p class="text-sm text-gray-600 font-medium">Left</p>
+                                    <p class="text-sm text-gray-600 font-medium">Remaining</p>
                                     <p class="text-2xl font-bold ${totalTaskMinutes <= totalFreeMinutes ? 'text-green-600' : 'text-red-600'}">
-                                        ${Math.floor(Math.max(0, totalFreeMinutes - totalTaskMinutes) / 60)}h
+                                        ${Math.max(0, totalFreeMinutes - totalTaskMinutes)}min
                                     </p>
                                 </div>
                             </div>
@@ -882,8 +906,12 @@
         // Initialize
         loadTasks();
         render();
+        renderChecklist();
         renderChatbot();
-        setInterval(render, 60000);
+        setInterval(() => {
+            render();
+            renderChecklist();
+        }, 60000);
     </script>
 </body>
 </html>
