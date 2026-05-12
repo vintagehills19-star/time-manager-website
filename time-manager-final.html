@@ -292,12 +292,38 @@
 
                 chatMessages.push({ role: 'assistant', content: assistantMessage });
 
-                // Parse task from response
-                const taskMatch = assistantMessage.match(/\{"action":\s*"add_task"[^}]*\}/);
+               
+               // Parse task from response
+                const taskMatch = assistantMessage.match(/\{"action":\s*"(add_task|update_task|delete_task)"[^}]*\}/);
                 if (taskMatch) {
                     try {
                         const taskData = JSON.parse(taskMatch[0]);
-                        const result = addTask(taskData.taskName, taskData.duration, taskData.dueDay, taskData.completeByDay);
+                        let result;
+                        
+                        if (taskData.action === 'delete_task') {
+                            const taskIndex = tasks.findIndex(t => t.name.includes(taskData.taskName) || t.originalName === taskData.taskName);
+                            if (taskIndex !== -1) {
+                                tasks.splice(taskIndex, 1);
+                                saveTasks();
+                                result = { message: `Deleted ${taskData.taskName}` };
+                            } else {
+                                result = { message: `Could not find ${taskData.taskName}` };
+                            }
+                        } else if (taskData.action === 'update_task') {
+                            const existingTask = tasks.find(t => t.name.includes(taskData.taskName) || t.originalName === taskData.taskName);
+                            if (existingTask) {
+                                existingTask.duration = taskData.duration;
+                                existingTask.dueDay = taskData.dueDay;
+                                existingTask.completeByDay = taskData.completeByDay;
+                                saveTasks();
+                                result = { message: `Updated ${taskData.taskName}` };
+                            } else {
+                                result = { message: `Could not find ${taskData.taskName}` };
+                            }
+                        } else {
+                            result = addTask(taskData.taskName, taskData.duration, taskData.dueDay, taskData.completeByDay);
+                        }
+                        
                         return {
                             message: assistantMessage.replace(taskMatch[0], '').trim(),
                             taskAdded: result.message,
@@ -312,8 +338,7 @@
             } catch (error) {
                 return { error: `Network error: ${error.message}` };
             }
-        }
-
+        }     
         function toggleChatSidebar() {
             chatSidebarOpen = !chatSidebarOpen;
             renderChatbot();
@@ -346,8 +371,7 @@
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-gray-100 text-gray-900'
                                 }">
-                                    <p class="text-sm">${msg.content.replace(/\{"action"[^}]*\}/, '').trim()}</p>
-                                </div>
+<p class="text-sm">${msg.content.replace(/\s*\{[\s\S]*?"action"[\s\S]*?\}/g, '').trim()}</p>                                </div>
                             </div>
                         `).join('')}
                     </div>
@@ -748,18 +772,40 @@
                             <div class="border-t pt-3">
                                 <p class="text-sm font-bold text-gray-700 mb-2">📝 Tasks:</p>
                                 <div class="space-y-2">
-                                    ${dayTasks.map(task => `
+                                    ${dayTasks.map(task => {
+                                        let startInfo = '';
+                                        if (day === today) {
+                                            const schedule = WEEKLY_SCHEDULE[today];
+                                            let nextFreeTime = null;
+                                            for (let block of schedule) {
+                                                if (block.type === 'flexible' && block.time.includes('-')) {
+                                                    const [start] = block.time.split('-').map(t => t.trim());
+                                                    const startMin = timeToMinutes(start);
+                                                    const now = new Date().getHours() * 60 + new Date().getMinutes();
+                                                    if (startMin > now) {
+                                                        nextFreeTime = { start, minUntil: startMin - now };
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                            if (nextFreeTime) {
+                                                startInfo = `Start in ${nextFreeTime.minUntil} min at ${nextFreeTime.start}`;
+                                            }
+                                        }
+                                        return `
                                         <div class="flex justify-between items-center p-2 rounded ${getTaskStatus(task) === 'fits' ? 'bg-green-100' : 'bg-yellow-100'}">
                                             <div>
                                                 <p class="font-medium text-gray-900">${task.name}</p>
                                                 <p class="text-sm text-gray-600">${task.duration}min</p>
+                                                ${startInfo ? `<p class="text-xs text-blue-600 font-bold">⏱️ ${startInfo}</p>` : ''}
                                             </div>
                                             <div class="flex gap-1">
                                                 <button onclick="openEditModal(${task.id})" class="text-blue-600">✏️</button>
                                                 <button onclick="deleteTask(${task.id})" class="text-red-600">✕</button>
                                             </div>
                                         </div>
-                                    `).join('')}
+                                        `;
+                                    }).join('')}
                                 </div>
                             </div>
                         ` : ''}
