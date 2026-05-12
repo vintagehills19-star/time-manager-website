@@ -693,10 +693,10 @@
             const currentTimeMin = new Date().getHours() * 60 + new Date().getMinutes();
             const todaysTasks = getTodaysTasks();
 
-            // Calculate today's free time and task time
-            const todayFreeTime = freeTime[today];
-            const todayTaskTime = todaysTasks.reduce((sum, t) => sum + t.duration, 0);
-            const remainingTime = Math.max(0, todayFreeTime - todayTaskTime);
+            // Calculate remaining free time (scheduled free time - task time)
+            const scheduledFreeTime = freeTime[today];
+            const allocatedTaskTime = todaysTasks.reduce((sum, t) => sum + t.duration, 0);
+            const actualFreeTime = Math.max(0, scheduledFreeTime - allocatedTaskTime);
 
             const container = document.getElementById('checklistContainer');
 
@@ -710,7 +710,7 @@
                         <h2 style="font-size: 24px; font-weight: bold; color: #111827; margin-bottom: 16px;">📋 Today's Tasks</h2>
 
                         <div style="background-color: #f0f4f8; padding: 12px; border-radius: 6px; margin-bottom: 16px; border-left: 4px solid #2563eb;">
-                            <p style="font-size: 20px; font-weight: bold; color: #2563eb; margin: 0;">${remainingTime}min FREE</p>
+                            <p style="font-size: 20px; font-weight: bold; color: #2563eb; margin: 0;">${actualFreeTime}min FREE</p>
                         </div>
 
                         <div style="display: flex; flex-direction: column; gap: 12px;">
