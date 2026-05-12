@@ -515,7 +515,7 @@
                         <h2 class="text-2xl font-bold text-gray-900 mb-4">✏️ Edit Task</h2>
                         <div class="space-y-4">
                             <input type="text" id="editName" value="${isPartOfSplit ? task.originalName : task.name}" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Task name">
-                            <input type="number" id="editDuration" value="${task.duration}" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Duration">
+                            <input type="number" id="editDuration" value="${task.duration || ''}" class="w-full px-3 py-2 border border-gray-300 rounded-lg" placeholder="Duration">
                             <select id="editDueDay" class="w-full px-3 py-2 border border-gray-300 rounded-lg">
                                 ${days.map(day => `<option value="${day}" ${day === task.dueDay ? 'selected' : ''}>${day}</option>`).join('')}
                             </select>
@@ -626,6 +626,11 @@
 
             if (!newName) {
                 alert('Task name cannot be empty');
+                return;
+            }
+
+            if (isNaN(newDuration) || newDuration <= 0) {
+                alert('Duration must be a valid number');
                 return;
             }
 
